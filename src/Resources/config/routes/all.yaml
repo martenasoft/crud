@@ -1,0 +1,2 @@
+martena_soft_crud:
+  resource: '@MartenaSoftCrudBundle/Resources/config/routes/crud.yaml'
