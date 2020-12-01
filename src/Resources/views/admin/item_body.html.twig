@@ -1,0 +1,7 @@
+<tr>
+{% for field in itemsFields %}
+    <td> {{ attribute(item, field) }}</td>
+    <td align="right">{% include itemActionButtons %}</td>
+
+{% endfor %}
+</tr>

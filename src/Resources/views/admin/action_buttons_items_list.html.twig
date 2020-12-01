@@ -1,0 +1,27 @@
+
+{% set activeUrlParamName = constant('MartenaSoft\\Common\\Library\\CommonValues::ACTIVE_URL_PARAM_NAME') %}
+{% set params = {id: item.id, (activeUrlParamName): item.id} %}
+
+{% if app.request.get(activeUrlParamName) == item.id %}
+
+    <a class="btn btn-success" href="{{ path(routeCreate, {parent: item.id}) }}">
+        <i class="cil-playlist-add"></i>
+    </a>
+
+        <a class="btn btn-dark" href="{{ path(routeEdit, {id: item.id}) }}">
+            <i class="cil-pencil"></i>
+        </a>
+
+
+
+    <a class="btn btn-danger" href="{{ path(routeDelete, params) }}">
+        <i class="cil-x"></i>
+    </a>
+
+
+    <a class="btn btn-light" href="{{ path(routeIndex) }}"> ... </a>
+{% else %}
+    <a class="btn btn-dark" href="{{ path(routeIndex, {
+        (activeUrlParamName): item.id
+    }) }}"> ... </a>
+{% endif %}

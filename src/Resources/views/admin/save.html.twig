@@ -1,0 +1,10 @@
+{% extends 'base-admin.html.twig' %}
+
+{% block title %} {{ title }} {% endblock %}
+{% block h1 %} {{ h1 }} {% endblock %}
+{% set activeUrlParamName = constant('MartenaSoft\\Common\\Library\\CommonValues::ACTIVE_URL_PARAM_NAME') %}
+
+{% block body %}
+    {% include '@MartenaSoftCommon/admin/form.html.twig' with form %}
+{% endblock %}
+

@@ -1,0 +1,58 @@
+{% extends 'base-admin.html.twig' %}
+
+{% block title %} {{ title }} {% endblock %}
+{% block h1 %} {{ h1 }} {% endblock %}
+{% set activeUrlParamName = constant('MartenaSoft\\Common\\Library\\CommonValues::ACTIVE_URL_PARAM_NAME') %}
+
+{% block body %}
+
+    <div class="count">
+        <div class="row">
+            <div class="col-3">
+                Total: {{ pagination.getTotalItemCount }}
+            </div>
+            <div class="col-6">
+                <div class="float-right">
+                    {% include '@MartenaSoftCommon/common/search_form.html.twig' with
+                        {'searh_from_return_url' : path('menu_admin_index')} %}
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="float-right">
+                    <a class="btn btn-success" href="{{ createButtonUrl }}">
+                        <i class="cil-plus"></i>
+                    </a>
+                    <a class="btn btn-secondary" href="{{ configButtonUrl }}">...</a>
+                </div>
+            </div>
+        </div>
+        <hr>
+    </div>
+    {% set tree = 1 %}
+    <table class="table table-bordered">
+        <thead>
+        {% include itemHeader with {itemsFields: itemsFields} %}
+        </thead>
+
+        <tbody>
+        {% for item in pagination %}
+            {% include itemBody with {
+                item: item,
+                itemsFields: itemsFields,
+                itemActionButtons: itemActionButtons,
+                routeIndex,
+                routeCreate,
+                routeEdit,
+                routeDelete
+            }
+        %}
+        {% endfor %}
+        </tbody>
+        <tfoot>
+         {% include itemFooter %}
+        </tfoot>
+    </table>
+    <hr>
+    {% include itemPagination with {pagination : pagination} %}
+
+{% endblock %}
