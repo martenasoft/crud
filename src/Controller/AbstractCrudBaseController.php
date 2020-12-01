@@ -7,6 +7,7 @@ use Doctrine\ORM\Query;
 use Knp\Component\Pager\Pagination\PaginationInterface;
 use Knp\Component\Pager\PaginatorInterface;
 use MartenaSoft\Common\Controller\AbstractAdminBaseController;
+use MartenaSoft\Common\Entity\CommonEntityInterface;
 use MartenaSoft\Common\Event\CommonFormAfterDeleteEvent;
 use MartenaSoft\Common\Event\CommonFormAfterSaveEvent;
 use MartenaSoft\Common\Event\CommonFormBeforeDeleteEvent;
@@ -17,6 +18,8 @@ use MartenaSoft\Menu\Entity\BaseMenuInterface;
 use MartenaSoft\Menu\Entity\MenuInterface;
 use MartenaSoft\Menu\Event\DeleteMenuEvent;
 use MartenaSoft\Menu\Event\SaveMenuEvent;
+use MartenaSoft\Trash\Entity\TrashEntityInterface;
+use MartenaSoft\Trash\Service\MoveToTrashServiceInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -55,14 +58,19 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
             $this->getEventDispatcher(new CommonFormBeforeSaveEvent($form));
             if ($form->isValid()) {
                 if ($entity instanceof BaseMenuInterface) {
-                    $this->getEventDispatcher()
-                        ->dispatch(
-                            new SaveMenuEvent(
-                                $form->getData()->getMenu(),
-                                $entity
-                            ),
-                            SaveMenuEvent::getEventName()
-                        );
+                    $menuEntity = $form->getData()->getMenu();
+
+                    if (!empty($menuEntity)) {
+                        $this->getEventDispatcher()
+                            ->dispatch(
+                                new SaveMenuEvent(
+                                    $form->getData()->getMenu(),
+                                    $entity
+                                ),
+                                SaveMenuEvent::getEventName()
+                            );
+
+                    }
                 }
 
                 $this->getEntityManager()->persist($entity);
@@ -85,7 +93,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         );
     }
 
-    public function delete(Request $request, int $id): Response
+    public function delete(Request $request, MoveToTrashServiceInterface $trashService, int $id): Response
     {
         $entity = $this->getRepository()->find($id);
         if ($request->getMethod() != Request::METHOD_POST) {
@@ -93,37 +101,8 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         } else {
             $post = $request->request->get('confirm_delete_form');
             $isSafeDelete = !empty($post['isSafeDelete']);
-
             try {
-                $this->getEntityManager()->beginTransaction();
-                $this->getEventDispatcher()->dispatch(
-                    new CommonFormBeforeDeleteEvent($entity),
-                    CommonFormBeforeDeleteEvent::getEventName()
-                );
-
-                if ($entity instanceof MenuInterface) {
-                    $this
-                        ->getEventDispatcher()
-                        ->dispatch(
-                            new DeleteMenuEvent($entity, $entity->getMenu()),
-                            DeleteMenuEvent::getEventName()
-                        );
-                }
-
-
-
-                //    $this->getMenuRepository()->delete($entity, $isSafeDelete);
-
-                $this->getEventDispatcher()->dispatch(
-                    new CommonFormAfterDeleteEvent($entity),
-                    CommonFormAfterDeleteEvent::getEventName()
-                );
-
-                $this->getEntityManager()->commit();
-                $this->addFlash(
-                    CommonValues::FLASH_SUCCESS_TYPE,
-                    CommonValues::FLUSH_SUCCESS_DELETE_MESSAGE
-                );
+                $this->deleteItem($entity, $trashService, $isSafeDelete);
             } catch (\Throwable $exception) {
                 $this->getLogger()->error(
                     CommonValues::ERROR_FORM_SAVE_LOGGER_MESSAGE,
@@ -134,11 +113,69 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                         'code' => $exception->getCode(),
                     ]
                 );
-                $this->getEntityManager()->rollback();
+                throw $exception;
             }
+
         }
 
         return $this->redirectToRoute($this->getRouteIndex());
+    }
+
+    protected function deleteItem(
+        CommonEntityInterface $entity,
+        MoveToTrashServiceInterface $trashService,
+        bool $isSafeDelete
+    ): void {
+        try {
+            $this->getEntityManager()->beginTransaction();
+
+            $commonFormBeforeDeleteEvent = new CommonFormBeforeDeleteEvent($entity);
+
+
+            $this->getEventDispatcher()->dispatch(
+                $commonFormBeforeDeleteEvent,
+                CommonFormBeforeDeleteEvent::getEventName()
+            );
+
+            if ($entity instanceof MenuInterface) {
+
+                $menuEntity = $entity->getMenu();
+
+                $deleteMenuEvent = new DeleteMenuEvent($entity, $menuEntity);
+                if ($deleteMenuEvent instanceof TrashEntityInterface) {
+                    $deleteMenuEvent->setIsDeleted($isSafeDelete);
+
+                    if ($trashService instanceof  MoveToTrashServiceInterface) {
+                        $trashService->move($menuEntity);
+                    }
+                }
+
+                $this
+                    ->getEventDispatcher()
+                    ->dispatch(
+                        $deleteMenuEvent,
+                        DeleteMenuEvent::getEventName()
+                    );
+            }
+
+            $this->getEventDispatcher()->dispatch(
+                new CommonFormAfterDeleteEvent($entity),
+                CommonFormAfterDeleteEvent::getEventName()
+            );
+
+            if ($trashService instanceof  MoveToTrashServiceInterface) {
+                $trashService->move($entity);
+            }
+
+            $this->getEntityManager()->commit();
+            $this->addFlash(
+                CommonValues::FLASH_SUCCESS_TYPE,
+                CommonValues::FLUSH_SUCCESS_DELETE_MESSAGE
+            );
+        } catch (\Throwable $exception) {
+            $this->getEntityManager()->rollback();
+            throw $exception;
+        }
     }
 
     protected function getSuccessSaveMessage(): string
@@ -153,26 +190,30 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
 
     protected function renderItems(PaginationInterface $pagination): Response
     {
+        $buttonRoutes = $this->getButtonRoutes();
+        $buttonRoutes['pagination'] = $pagination;
         return $this->render(
-            $this->getIndexTemplate(),
-            [
-                'h1' => $this->getH1(),
-                'title' => $this->getTitle(),
-                'createButtonUrl' => $this->getCreateButtonUrl(),
-                'configButtonUrl' => $this->getConfigButtonUrl(),
-                'pagination' => $pagination,
-                'itemHeader' => $this->getItemHeader(),
-                'itemsFields' => $this->itemsFields(),
-                'itemBody' => $this->getItemBody(),
-                'itemFooter' => $this->getItemFooter(),
-                'itemPagination' => $this->getPagination(),
-                'itemActionButtons' => $this->getItemActionButtons(),
-                'routeCreate' => $this->getRouteCreate(),
-                'routeEdit' => $this->getRouteEdit(),
-                'routeDelete' => $this->getRouteDelete(),
-                'routeIndex' => $this->getRouteIndex(),
-            ]
-        );
+            $this->getIndexTemplate(), $buttonRoutes);
+    }
+
+    protected function getButtonRoutes(): array
+    {
+        return [
+            'h1' => $this->getH1(),
+            'title' => $this->getTitle(),
+            'createButtonUrl' => $this->getCreateButtonUrl(),
+            'configButtonUrl' => $this->getConfigButtonUrl(),
+            'itemHeader' => $this->getItemHeader(),
+            'itemsFields' => $this->itemsFields(),
+            'itemBody' => $this->getItemBody(),
+            'itemFooter' => $this->getItemFooter(),
+            'itemPagination' => $this->getPagination(),
+            'itemActionButtons' => $this->getItemActionButtons(),
+            'routeCreate' => $this->getRouteCreate(),
+            'routeEdit' => $this->getRouteEdit(),
+            'routeDelete' => $this->getRouteDelete(),
+            'routeIndex' => $this->getRouteIndex(),
+        ];
     }
 
     protected function getPagination(): string
