@@ -20,6 +20,7 @@ use MartenaSoft\Menu\Event\DeleteMenuEvent;
 use MartenaSoft\Menu\Event\SaveMenuEvent;
 use MartenaSoft\Trash\Entity\TrashEntityInterface;
 use MartenaSoft\Trash\Service\MoveToTrashServiceInterface;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -55,9 +56,39 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         $form->handleRequest($request);
 
         if ($form->isSubmitted()) {
-            $this->getEventDispatcher(new CommonFormBeforeSaveEvent($form));
+
+            $event = new CommonFormBeforeSaveEvent($form);
+            $this->getEventDispatcher()->dispatch($event, CommonFormBeforeSaveEvent::getEventName());
+            if (($response = $event->getResponse()) instanceof Response) {
+                return $response;
+            }
+
             if ($form->isValid()) {
-                if ($entity instanceof BaseMenuInterface) {
+
+                try {
+                    $this->getEntityManager()->persist($entity);
+                    $this->getEntityManager()->flush();
+                    $this->addFlash(CommonValues::FLASH_SUCCESS_TYPE, $this->getSuccessSaveMessage());
+                    $event = new CommonFormAfterSaveEvent($form);
+                    $this->getEventDispatcher()->dispatch($event, CommonFormAfterSaveEvent::getEventName());
+
+                    if (($response = $event->getResponse()) instanceof Response) {
+                        return $response;
+                    }
+
+                } catch (\Throwable $exception) {
+                    $this->getLogger()->error(
+                        CommonValues::ERROR_FORM_SAVE_LOGGER_MESSAGE,
+                        [
+                            'file' => __CLASS__,
+                            'line' => $exception->getLine(),
+                            'message' => $exception->getMessage(),
+                            'code' => $exception->getCode(),
+                        ]
+                    );
+                }
+
+                /*if ($entity instanceof BaseMenuInterface) {
                     $menuEntity = $form->getData()->getMenu();
 
                     if (!empty($menuEntity)) {
@@ -71,12 +102,9 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                             );
 
                     }
-                }
+                }*/
 
-                $this->getEntityManager()->persist($entity);
-                $this->getEntityManager()->flush();
-                $this->addFlash(CommonValues::FLASH_SUCCESS_TYPE, $this->getSuccessSaveMessage());
-                $this->getEventDispatcher(new CommonFormAfterSaveEvent($form));
+
                 return $this->redirect($this->getIndexPageUrl());
             } else {
                 $this->addFlash(CommonValues::FLASH_ERROR_TYPE, $this->getErrorSaveMessage());
@@ -101,9 +129,38 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         } else {
             $post = $request->request->get('confirm_delete_form');
             $isSafeDelete = !empty($post['isSafeDelete']);
+
             try {
-                $this->deleteItem($entity, $trashService, $isSafeDelete);
+
+                $event = new CommonFormBeforeDeleteEvent($entity, $isSafeDelete);
+                $this->getEventDispatcher()->dispatch(
+                    $event,
+                    CommonFormBeforeDeleteEvent::getEventName()
+                );
+
+                if (($response = $event->getResponse()) instanceof Response) {
+                    return $response;
+                }
+
+                $this->getEntityManager()->beginTransaction();
+                $this->getEntityManager()->remove($entity);
+                $this->getEntityManager()->flush();
+
+                $event = new CommonFormAfterDeleteEvent($entity, $isSafeDelete);
+                $this->getEventDispatcher()->dispatch($event, CommonFormAfterDeleteEvent::getEventName());
+                $this->getEntityManager()->commit();
+
+                if (($response = $event->getResponse()) instanceof Response) {
+                    return $response;
+                }
+
+                $this->addFlash(
+                    CommonValues::FLASH_SUCCESS_TYPE,
+                    CommonValues::FLUSH_SUCCESS_DELETE_MESSAGE
+                );
+
             } catch (\Throwable $exception) {
+                $this->getEntityManager()->rollback();
                 $this->getLogger()->error(
                     CommonValues::ERROR_FORM_SAVE_LOGGER_MESSAGE,
                     [
@@ -113,69 +170,10 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                         'code' => $exception->getCode(),
                     ]
                 );
-                throw $exception;
             }
-
         }
 
         return $this->redirectToRoute($this->getRouteIndex());
-    }
-
-    protected function deleteItem(
-        CommonEntityInterface $entity,
-        MoveToTrashServiceInterface $trashService,
-        bool $isSafeDelete
-    ): void {
-        try {
-            $this->getEntityManager()->beginTransaction();
-
-            $commonFormBeforeDeleteEvent = new CommonFormBeforeDeleteEvent($entity);
-
-
-            $this->getEventDispatcher()->dispatch(
-                $commonFormBeforeDeleteEvent,
-                CommonFormBeforeDeleteEvent::getEventName()
-            );
-
-            if ($entity instanceof MenuInterface) {
-
-                $menuEntity = $entity->getMenu();
-
-                $deleteMenuEvent = new DeleteMenuEvent($entity, $menuEntity);
-                if ($deleteMenuEvent instanceof TrashEntityInterface) {
-                    $deleteMenuEvent->setIsDeleted($isSafeDelete);
-
-                    if ($trashService instanceof  MoveToTrashServiceInterface) {
-                        $trashService->move($menuEntity);
-                    }
-                }
-
-                $this
-                    ->getEventDispatcher()
-                    ->dispatch(
-                        $deleteMenuEvent,
-                        DeleteMenuEvent::getEventName()
-                    );
-            }
-
-            $this->getEventDispatcher()->dispatch(
-                new CommonFormAfterDeleteEvent($entity),
-                CommonFormAfterDeleteEvent::getEventName()
-            );
-
-            if ($trashService instanceof  MoveToTrashServiceInterface) {
-                $trashService->move($entity);
-            }
-
-            $this->getEntityManager()->commit();
-            $this->addFlash(
-                CommonValues::FLASH_SUCCESS_TYPE,
-                CommonValues::FLUSH_SUCCESS_DELETE_MESSAGE
-            );
-        } catch (\Throwable $exception) {
-            $this->getEntityManager()->rollback();
-            throw $exception;
-        }
     }
 
     protected function getSuccessSaveMessage(): string
@@ -253,10 +251,20 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
 
     protected function getItemsQuery(): Query
     {
-        return $this
+        $queryBuilder = $this
             ->getRepository()
-            ->createQueryBuilder('t_')
-            ->getQuery();
+            ->createQueryBuilder('t_');
+
+        $entityClass = $this->getEntityClassName();
+        $entity = new $entityClass();
+
+        if ($entity instanceof TrashEntityInterface) {
+              $queryBuilder
+                  ->andWhere('t_.isDeleted=:isDeleted')
+                  ->setParameter('isDeleted', false);
+        }
+
+        return $queryBuilder->getQuery();
     }
 
     protected function getRepository(): ServiceEntityRepositoryInterface
