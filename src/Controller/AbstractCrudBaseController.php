@@ -12,8 +12,10 @@ use MartenaSoft\Common\Event\CommonFormAfterDeleteEvent;
 use MartenaSoft\Common\Event\CommonFormAfterSaveEvent;
 use MartenaSoft\Common\Event\CommonFormBeforeDeleteEvent;
 use MartenaSoft\Common\Event\CommonFormBeforeSaveEvent;
+use MartenaSoft\Common\Event\CommonFormShowEvent;
 use MartenaSoft\Common\Exception\ElementNotFoundException;
 use MartenaSoft\Common\Library\CommonValues;
+use MartenaSoft\Common\Library\EntityHelper;
 use MartenaSoft\Menu\Entity\BaseMenuInterface;
 use MartenaSoft\Menu\Entity\MenuInterface;
 use MartenaSoft\Menu\Event\DeleteMenuEvent;
@@ -53,23 +55,30 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         }
 
         $form = $this->createForm($this->getFormClassName(), $entity);
+        $eventShow = new CommonFormShowEvent($form, $entity);
+        $this->getEventDispatcher()->dispatch($eventShow, CommonFormShowEvent::getEventName());
+
+        if (($response = $eventShow->getResponse()) instanceof Response) {
+            return $response;
+        }
+
         $form->handleRequest($request);
 
         if ($form->isSubmitted()) {
 
-            $event = new CommonFormBeforeSaveEvent($form);
-            $this->getEventDispatcher()->dispatch($event, CommonFormBeforeSaveEvent::getEventName());
-            if (($response = $event->getResponse()) instanceof Response) {
-                return $response;
-            }
-
             if ($form->isValid()) {
 
                 try {
+                    $event = new CommonFormBeforeSaveEvent($form, $entity);
+                    $this->getEventDispatcher()->dispatch($event, CommonFormBeforeSaveEvent::getEventName());
+                    if (($response = $event->getResponse()) instanceof Response) {
+                        return $response;
+                    }
+
                     $this->getEntityManager()->persist($entity);
                     $this->getEntityManager()->flush();
                     $this->addFlash(CommonValues::FLASH_SUCCESS_TYPE, $this->getSuccessSaveMessage());
-                    $event = new CommonFormAfterSaveEvent($form);
+                    $event = new CommonFormAfterSaveEvent($form, $entity);
                     $this->getEventDispatcher()->dispatch($event, CommonFormAfterSaveEvent::getEventName());
 
                     if (($response = $event->getResponse()) instanceof Response) {
@@ -86,24 +95,8 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                             'code' => $exception->getCode(),
                         ]
                     );
+                    $this->addFlash(CommonValues::FLASH_ERROR_TYPE, $this->getErrorSaveMessage());
                 }
-
-                /*if ($entity instanceof BaseMenuInterface) {
-                    $menuEntity = $form->getData()->getMenu();
-
-                    if (!empty($menuEntity)) {
-                        $this->getEventDispatcher()
-                            ->dispatch(
-                                new SaveMenuEvent(
-                                    $form->getData()->getMenu(),
-                                    $entity
-                                ),
-                                SaveMenuEvent::getEventName()
-                            );
-
-                    }
-                }*/
-
 
                 return $this->redirect($this->getIndexPageUrl());
             } else {
@@ -181,8 +174,11 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         return 'Saved success';
     }
 
-    protected function getErrorSaveMessage(): string
+    protected function getErrorSaveMessage(?\Throwable  $exception = null): string
     {
+        if ($exception) {
+
+        }
         return 'Saved error';
     }
 
@@ -253,7 +249,9 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
     {
         $queryBuilder = $this
             ->getRepository()
-            ->createQueryBuilder('t_');
+            ->createQueryBuilder('t_')
+            ->orderBy('t_.id', 'DESC')
+        ;
 
         $entityClass = $this->getEntityClassName();
         $entity = new $entityClass();
