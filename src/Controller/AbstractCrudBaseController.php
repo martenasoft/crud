@@ -8,6 +8,7 @@ use Knp\Component\Pager\Pagination\PaginationInterface;
 use Knp\Component\Pager\PaginatorInterface;
 use MartenaSoft\Common\Controller\AbstractAdminBaseController;
 use MartenaSoft\Common\Entity\CommonEntityInterface;
+use MartenaSoft\Common\Event\CommonEventResponseInterface;
 use MartenaSoft\Common\Event\CommonFormAfterDeleteEvent;
 use MartenaSoft\Common\Event\CommonFormAfterSaveEvent;
 use MartenaSoft\Common\Event\CommonFormBeforeDeleteEvent;
@@ -70,6 +71,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
 
                 try {
                     $event = new CommonFormBeforeSaveEvent($form, $entity);
+                    $event->setRedirectUrl($this->getSaveTemplate());
                     $this->getEventDispatcher()->dispatch($event, CommonFormBeforeSaveEvent::getEventName());
                     if (($response = $event->getResponse()) instanceof Response) {
                         return $response;
@@ -79,6 +81,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                     $this->getEntityManager()->flush();
                     $this->addFlash(CommonValues::FLASH_SUCCESS_TYPE, $this->getSuccessSaveMessage());
                     $event = new CommonFormAfterSaveEvent($form, $entity);
+                    $event->setRedirectUrl($this->getSaveTemplate());
                     $this->getEventDispatcher()->dispatch($event, CommonFormAfterSaveEvent::getEventName());
 
                     if (($response = $event->getResponse()) instanceof Response) {
@@ -122,16 +125,18 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         } else {
             $post = $request->request->get('confirm_delete_form');
             $isSafeDelete = !empty($post['isSafeDelete']);
+            $redirectUrl = $this->generateUrl($this->getRouteIndex());
 
             try {
-
                 $event = new CommonFormBeforeDeleteEvent($entity, $isSafeDelete);
-                $this->getEventDispatcher()->dispatch(
-                    $event,
-                    CommonFormBeforeDeleteEvent::getEventName()
-                );
+                $event->setRedirectUrl($redirectUrl);
+                $this->getEventDispatcher()->dispatch($event, CommonFormBeforeDeleteEvent::getEventName());
 
                 if (($response = $event->getResponse()) instanceof Response) {
+                    $this->addFlash(
+                        CommonValues::FLASH_SUCCESS_TYPE,
+                        CommonValues::FLUSH_SUCCESS_DELETE_MESSAGE
+                    );
                     return $response;
                 }
 
@@ -140,10 +145,18 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                 $this->getEntityManager()->flush();
 
                 $event = new CommonFormAfterDeleteEvent($entity, $isSafeDelete);
+                if ($event instanceof CommonEventResponseInterface) {
+                    $event->setRedirectUrl($redirectUrl);
+                }
+
                 $this->getEventDispatcher()->dispatch($event, CommonFormAfterDeleteEvent::getEventName());
                 $this->getEntityManager()->commit();
 
                 if (($response = $event->getResponse()) instanceof Response) {
+                    $this->addFlash(
+                        CommonValues::FLASH_SUCCESS_TYPE,
+                        CommonValues::FLUSH_SUCCESS_DELETE_MESSAGE
+                    );
                     return $response;
                 }
 
@@ -153,6 +166,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                 );
 
             } catch (\Throwable $exception) {
+                throw $exception;
                 $this->getEntityManager()->rollback();
                 $this->getLogger()->error(
                     CommonValues::ERROR_FORM_SAVE_LOGGER_MESSAGE,
