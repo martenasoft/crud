@@ -7,23 +7,17 @@ use Doctrine\ORM\Query;
 use Knp\Component\Pager\Pagination\PaginationInterface;
 use Knp\Component\Pager\PaginatorInterface;
 use MartenaSoft\Common\Controller\AbstractAdminBaseController;
-use MartenaSoft\Common\Entity\CommonEntityInterface;
-use MartenaSoft\Common\Event\CommonEventResponseInterface;
-use MartenaSoft\Common\Event\CommonFormAfterDeleteEvent;
-use MartenaSoft\Common\Event\CommonFormAfterSaveEvent;
-use MartenaSoft\Common\Event\CommonFormBeforeDeleteEvent;
-use MartenaSoft\Common\Event\CommonFormBeforeSaveEvent;
 use MartenaSoft\Common\Event\CommonFormShowEvent;
 use MartenaSoft\Common\Exception\ElementNotFoundException;
 use MartenaSoft\Common\Library\CommonValues;
 use MartenaSoft\Common\Library\EntityHelper;
-use MartenaSoft\Menu\Entity\BaseMenuInterface;
-use MartenaSoft\Menu\Entity\MenuInterface;
-use MartenaSoft\Menu\Event\DeleteMenuEvent;
-use MartenaSoft\Menu\Event\SaveMenuEvent;
+use MartenaSoft\Crud\Event\CrudAfterDeleteEvent;
+use MartenaSoft\Crud\Event\CrudAfterFindEvent;
+use MartenaSoft\Crud\Event\CrudAfterSaveEvent;
+use MartenaSoft\Crud\Event\CrudBeforeDeleteEvent;
+use MartenaSoft\Crud\Event\CrudBeforeSaveEvent;
 use MartenaSoft\Trash\Entity\TrashEntityInterface;
 use MartenaSoft\Trash\Service\MoveToTrashServiceInterface;
-use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -51,11 +45,18 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
             $entity = $this->getRepository()->find($id);
         }
 
+        $form = $this->createForm($this->getFormClassName(), $entity);
+        $event = new CrudAfterFindEvent($form, $entity);
+
+        $this->getEventDispatcher()->dispatch($event, CrudAfterFindEvent::getEventName());
+        if (($response = $event->getResponse()) instanceof Response) {
+            return $response;
+        }
+
         if (empty($entity)) {
             throw new ElementNotFoundException();
         }
 
-        $form = $this->createForm($this->getFormClassName(), $entity);
         $eventShow = new CommonFormShowEvent($form, $entity);
         $this->getEventDispatcher()->dispatch($eventShow, CommonFormShowEvent::getEventName());
 
@@ -70,19 +71,22 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
             if ($form->isValid()) {
 
                 try {
-                    $event = new CommonFormBeforeSaveEvent($form, $entity);
+                    $event = new CrudBeforeSaveEvent($form, $entity);
                     $event->setRedirectUrl($this->getSaveTemplate());
-                    $this->getEventDispatcher()->dispatch($event, CommonFormBeforeSaveEvent::getEventName());
+                    $this->getEventDispatcher()->dispatch($event, CrudBeforeSaveEvent::getEventName());
+
                     if (($response = $event->getResponse()) instanceof Response) {
                         return $response;
                     }
 
                     $this->getEntityManager()->persist($entity);
                     $this->getEntityManager()->flush();
+
                     $this->addFlash(CommonValues::FLASH_SUCCESS_TYPE, $this->getSuccessSaveMessage());
-                    $event = new CommonFormAfterSaveEvent($form, $entity);
+
+                    $event = new CrudAfterSaveEvent($form, $entity);
                     $event->setRedirectUrl($this->getSaveTemplate());
-                    $this->getEventDispatcher()->dispatch($event, CommonFormAfterSaveEvent::getEventName());
+                    $this->getEventDispatcher()->dispatch($event, CrudAfterSaveEvent::getEventName());
 
                     if (($response = $event->getResponse()) instanceof Response) {
                         return $response;
@@ -128,9 +132,9 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
             $redirectUrl = $this->generateUrl($this->getRouteIndex());
 
             try {
-                $event = new CommonFormBeforeDeleteEvent($entity, $isSafeDelete);
+                $event = new CrudBeforeDeleteEvent($entity, $isSafeDelete);
                 $event->setRedirectUrl($redirectUrl);
-                $this->getEventDispatcher()->dispatch($event, CommonFormBeforeDeleteEvent::getEventName());
+                $this->getEventDispatcher()->dispatch($event, CrudBeforeDeleteEvent::getEventName());
 
                 if (($response = $event->getResponse()) instanceof Response) {
                     $this->addFlash(
@@ -144,12 +148,11 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                 $this->getEntityManager()->remove($entity);
                 $this->getEntityManager()->flush();
 
-                $event = new CommonFormAfterDeleteEvent($entity, $isSafeDelete);
-                if ($event instanceof CommonEventResponseInterface) {
-                    $event->setRedirectUrl($redirectUrl);
-                }
+                $event = new CrudAfterDeleteEvent($entity, $isSafeDelete);
+                $event->setRedirectUrl($redirectUrl);
 
-                $this->getEventDispatcher()->dispatch($event, CommonFormAfterDeleteEvent::getEventName());
+
+                $this->getEventDispatcher()->dispatch($event, CrudAfterDeleteEvent::getEventName());
                 $this->getEntityManager()->commit();
 
                 if (($response = $event->getResponse()) instanceof Response) {
