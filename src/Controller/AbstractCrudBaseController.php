@@ -79,6 +79,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                         return $response;
                     }
 
+
                     $this->getEntityManager()->persist($entity);
                     $this->getEntityManager()->flush();
 
@@ -92,11 +93,12 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                         return $response;
                     }
 
+                    return $this->redirect($this->getIndexPageUrl());
                 } catch (\Throwable $exception) {
                     $this->getLogger()->error(
                         CommonValues::ERROR_FORM_SAVE_LOGGER_MESSAGE,
                         [
-                            'file' => __CLASS__,
+                            'file' => $exception->getFile(),
                             'line' => $exception->getLine(),
                             'message' => $exception->getMessage(),
                             'code' => $exception->getCode(),
@@ -105,7 +107,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                     $this->addFlash(CommonValues::FLASH_ERROR_TYPE, $this->getErrorSaveMessage());
                 }
 
-                return $this->redirect($this->getIndexPageUrl());
+
             } else {
                 $this->addFlash(CommonValues::FLASH_ERROR_TYPE, $this->getErrorSaveMessage());
             }
@@ -153,6 +155,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
 
 
                 $this->getEventDispatcher()->dispatch($event, CrudAfterDeleteEvent::getEventName());
+
                 $this->getEntityManager()->commit();
 
                 if (($response = $event->getResponse()) instanceof Response) {
@@ -169,17 +172,18 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                 );
 
             } catch (\Throwable $exception) {
-                throw $exception;
+
                 $this->getEntityManager()->rollback();
                 $this->getLogger()->error(
                     CommonValues::ERROR_FORM_SAVE_LOGGER_MESSAGE,
                     [
-                        'file' => __CLASS__,
+                        'file' => $exception->getFile(),
                         'line' => $exception->getLine(),
                         'message' => $exception->getMessage(),
                         'code' => $exception->getCode(),
                     ]
                 );
+                throw $exception;
             }
         }
 
@@ -203,6 +207,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
     {
         $buttonRoutes = $this->getButtonRoutes();
         $buttonRoutes['pagination'] = $pagination;
+
         return $this->render(
             $this->getIndexTemplate(), $buttonRoutes);
     }
@@ -249,17 +254,17 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
 
     protected function getItemFooter(): string
     {
-        return '@MartenaSoftCommon/admin/item_footer.html.twig';
+        return '@MartenaSoftCrud/admin/item_footer.html.twig';
     }
 
     protected function getIndexTemplate(): string
     {
-        return '@MartenaSoftCommon/admin/index.html.twig';
+        return '@MartenaSoftCrud/admin/index.html.twig';
     }
 
     protected function getSaveTemplate(): string
     {
-        return '@MartenaSoftCommon/admin/save.html.twig';
+        return '@MartenaSoftCrud/admin/save.html.twig';
     }
 
     protected function getItemsQuery(): Query
