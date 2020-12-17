@@ -30,7 +30,8 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         $pagination = $paginator->paginate(
             $itemQuery,
             $request->query->getInt('page', 1),
-            CommonValues::ADMIN_PAGINATION_LIMIT
+            CommonValues::ADMIN_PAGINATION_LIMIT,
+            ['distinct'=>false]
         );
 
         return $this->renderItems($pagination);
