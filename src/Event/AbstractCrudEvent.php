@@ -8,6 +8,7 @@ use MartenaSoft\Common\Event\CommonEventResponseInterface;
 use MartenaSoft\Common\Event\CommonFormEventEntityInterface;
 use MartenaSoft\Common\Event\CommonFormEventInterface;
 use Symfony\Component\Form\FormInterface;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -21,11 +22,13 @@ abstract class AbstractCrudEvent extends Event implements
     protected ?string $redirectUrl = null;
     protected CommonEntityInterface $entity;
     protected FormInterface $form;
+    private ?Request $request;
 
-    public function __construct(FormInterface $form, CommonEntityInterface $entity)
+    public function __construct(FormInterface $form, CommonEntityInterface $entity, ?Request $request = null)
     {
         $this->form = $form;
         $this->entity = $entity;
+        $this->request = $request;
     }
 
     public function getResponse(): ?Response
@@ -60,4 +63,8 @@ abstract class AbstractCrudEvent extends Event implements
         return $this->form;
     }
 
+    public function getRequest(): ?Request
+    {
+        return $this->request;
+    }
 }

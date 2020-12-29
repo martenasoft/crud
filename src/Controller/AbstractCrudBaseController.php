@@ -7,6 +7,7 @@ use Doctrine\ORM\Query;
 use Knp\Component\Pager\Pagination\PaginationInterface;
 use Knp\Component\Pager\PaginatorInterface;
 use MartenaSoft\Common\Controller\AbstractAdminBaseController;
+use MartenaSoft\Common\Entity\CommonEntityInterface;
 use MartenaSoft\Common\Event\CommonFormShowEvent;
 use MartenaSoft\Common\Exception\ElementNotFoundException;
 use MartenaSoft\Common\Library\CommonValues;
@@ -47,7 +48,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         }
 
         $form = $this->createForm($this->getFormClassName(), $entity);
-        $event = new CrudAfterFindEvent($form, $entity);
+        $event = new CrudAfterFindEvent($form, $entity, $request);
 
         $this->getEventDispatcher()->dispatch($event, CrudAfterFindEvent::getEventName());
         if (($response = $event->getResponse()) instanceof Response) {
@@ -58,7 +59,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
             throw new ElementNotFoundException();
         }
 
-        $eventShow = new CommonFormShowEvent($form, $entity);
+        $eventShow = new CommonFormShowEvent($form, $entity, $request);
         $this->getEventDispatcher()->dispatch($eventShow, CommonFormShowEvent::getEventName());
 
         if (($response = $eventShow->getResponse()) instanceof Response) {
@@ -72,7 +73,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
             if ($form->isValid()) {
 
                 try {
-                    $event = new CrudBeforeSaveEvent($form, $entity);
+                    $event = new CrudBeforeSaveEvent($form, $entity, $request);
                     $event->setRedirectUrl($this->getSaveTemplate());
                     $this->getEventDispatcher()->dispatch($event, CrudBeforeSaveEvent::getEventName());
 
@@ -80,13 +81,11 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                         return $response;
                     }
 
-
                     $this->getEntityManager()->persist($entity);
                     $this->getEntityManager()->flush();
-
                     $this->addFlash(CommonValues::FLASH_SUCCESS_TYPE, $this->getSuccessSaveMessage());
 
-                    $event = new CrudAfterSaveEvent($form, $entity);
+                    $event = new CrudAfterSaveEvent($form, $entity, $request);
                     $event->setRedirectUrl($this->getSaveTemplate());
                     $this->getEventDispatcher()->dispatch($event, CrudAfterSaveEvent::getEventName());
 
@@ -123,6 +122,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
             ]
         );
     }
+
 
     public function delete(Request $request, MoveToTrashServiceInterface $trashService, int $id): Response
     {
