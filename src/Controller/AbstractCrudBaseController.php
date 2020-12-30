@@ -9,6 +9,7 @@ use Knp\Component\Pager\PaginatorInterface;
 use MartenaSoft\Common\Controller\AbstractAdminBaseController;
 use MartenaSoft\Common\Entity\CommonEntityInterface;
 use MartenaSoft\Common\Event\CommonFormShowEvent;
+use MartenaSoft\Common\Exception\CommonExceptionInterface;
 use MartenaSoft\Common\Exception\ElementNotFoundException;
 use MartenaSoft\Common\Library\CommonValues;
 use MartenaSoft\Common\Library\EntityHelper;
@@ -32,7 +33,7 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
             $itemQuery,
             $request->query->getInt('page', 1),
             CommonValues::ADMIN_PAGINATION_LIMIT,
-            ['distinct'=>false]
+            ['distinct' => false]
         );
 
         return $this->renderItems($pagination);
@@ -83,7 +84,6 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
 
                     $this->getEntityManager()->persist($entity);
                     $this->getEntityManager()->flush();
-                    $this->addFlash(CommonValues::FLASH_SUCCESS_TYPE, $this->getSuccessSaveMessage());
 
                     $event = new CrudAfterSaveEvent($form, $entity, $request);
                     $event->setRedirectUrl($this->getSaveTemplate());
@@ -92,9 +92,10 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                     if (($response = $event->getResponse()) instanceof Response) {
                         return $response;
                     }
-
+                    $this->addFlash(CommonValues::FLASH_SUCCESS_TYPE, $this->getSuccessSaveMessage());
                     return $this->redirect($this->getIndexPageUrl());
                 } catch (\Throwable $exception) {
+
                     $this->getLogger()->error(
                         CommonValues::ERROR_FORM_SAVE_LOGGER_MESSAGE,
                         [
@@ -104,11 +105,11 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                             'code' => $exception->getCode(),
                         ]
                     );
-                    $this->addFlash(CommonValues::FLASH_ERROR_TYPE, $this->getErrorSaveMessage());
+                    $this->addFlash(CommonValues::FLASH_ERROR_TYPE, $this->getErrorSaveMessage($exception));
                 }
 
-
             } else {
+
                 $this->addFlash(CommonValues::FLASH_ERROR_TYPE, $this->getErrorSaveMessage());
             }
         }
@@ -122,7 +123,6 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
             ]
         );
     }
-
 
     public function delete(Request $request, MoveToTrashServiceInterface $trashService, int $id): Response
     {
@@ -196,11 +196,12 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         return 'Saved success';
     }
 
-    protected function getErrorSaveMessage(?\Throwable  $exception = null): string
+    protected function getErrorSaveMessage(?\Throwable $exception = null): string
     {
-        if ($exception) {
-
+        if ($exception instanceof CommonExceptionInterface && !empty($exception->getUserMessage())) {
+            return $exception->getUserMessage();
         }
+
         return 'Saved error';
     }
 
@@ -273,16 +274,15 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
         $queryBuilder = $this
             ->getRepository()
             ->createQueryBuilder('t_')
-            ->orderBy('t_.id', 'DESC')
-        ;
+            ->orderBy('t_.id', 'DESC');
 
         $entityClass = $this->getEntityClassName();
         $entity = new $entityClass();
 
         if ($entity instanceof TrashEntityInterface) {
-              $queryBuilder
-                  ->andWhere('t_.isDeleted=:isDeleted')
-                  ->setParameter('isDeleted', false);
+            $queryBuilder
+                ->andWhere('t_.isDeleted=:isDeleted')
+                ->setParameter('isDeleted', false);
         }
 
         return $queryBuilder->getQuery();
