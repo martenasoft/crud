@@ -50,26 +50,43 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
 
         $form = $this->createForm($this->getFormClassName(), $entity);
         $event = new CrudAfterFindEvent($form, $entity, $request);
+        $isError = false;
 
-        $this->getEventDispatcher()->dispatch($event, CrudAfterFindEvent::getEventName());
-        if (($response = $event->getResponse()) instanceof Response) {
-            return $response;
-        }
+        try {
+            $this->getEventDispatcher()->dispatch($event, CrudAfterFindEvent::getEventName());
+            if (($response = $event->getResponse()) instanceof Response) {
+                return $response;
+            }
 
-        if (empty($entity)) {
-            throw new ElementNotFoundException();
-        }
+            if (empty($entity)) {
+                throw new ElementNotFoundException();
+            }
 
-        $eventShow = new CommonFormShowEvent($form, $entity, $request);
-        $this->getEventDispatcher()->dispatch($eventShow, CommonFormShowEvent::getEventName());
+            $eventShow = new CommonFormShowEvent($form, $entity, $request);
+            $this->getEventDispatcher()->dispatch($eventShow, CommonFormShowEvent::getEventName());
 
-        if (($response = $eventShow->getResponse()) instanceof Response) {
-            return $response;
+            if (($response = $eventShow->getResponse()) instanceof Response) {
+                return $response;
+            }
+        } catch (\Throwable $exception) {
+            $isError = true;
+
+            $this->getLogger()->error(
+                CommonValues::ERROR_FORM_SAVE_LOGGER_MESSAGE,
+                [
+                    'file' => $exception->getFile(),
+                    'line' => $exception->getLine(),
+                    'message' => $exception->getMessage(),
+                    'code' => $exception->getCode(),
+                ]
+            );
+
+            $this->addFlash(CommonValues::FLASH_ERROR_TYPE, $this->getErrorSaveMessage($exception));
         }
 
         $form->handleRequest($request);
 
-        if ($form->isSubmitted()) {
+        if (!$isError && $form->isSubmitted()) {
 
             if ($form->isValid()) {
 
@@ -105,11 +122,11 @@ abstract class AbstractCrudBaseController extends AbstractAdminBaseController
                             'code' => $exception->getCode(),
                         ]
                     );
+
                     $this->addFlash(CommonValues::FLASH_ERROR_TYPE, $this->getErrorSaveMessage($exception));
                 }
 
             } else {
-
                 $this->addFlash(CommonValues::FLASH_ERROR_TYPE, $this->getErrorSaveMessage());
             }
         }
